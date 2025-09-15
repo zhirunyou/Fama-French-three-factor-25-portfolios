@@ -275,21 +275,9 @@ def run_all(factors_path, ports_path, out_dir='results'):
     Ncols = [c for c in ports.columns]
     factors = df[Kcols]
     ports = df[Ncols]
+    rf = factors['RF']
     # Compute excess returns
-    if 'RF' in factors.columns:
-        rf = factors['RF'] / 100.0 if factors['RF'].abs().mean()>1 else factors['RF']
-        # Convert percent to decimal if necessary
-    else:
-        rf = pd.Series(0.0, index=factors.index)
-    # convert factor units: if factors are in percent, convert to decimals
-    for col in ['Mkt-RF','SMB','HML']:
-        if col in factors.columns:
-            if factors[col].abs().mean() > 1:
-                factors[col] = factors[col] / 100.0
     ports = ports.astype(float)
-    # convert portfolio returns percent->decimal if needed
-    if ports.abs().mean().mean() > 1:
-        ports = ports / 100.0
     excess = ports.sub(rf, axis=0)
     # Trim sample to avoid initial missing
     excess = excess.dropna(how='all')
@@ -336,17 +324,11 @@ def run_all(factors_path, ports_path, out_dir='results'):
     print('Results written to', out_dir)
 
 
-#if __name__ == '__main__':
-    #parser = argparse.ArgumentParser()
-    #parser.add_argument('--factors', help='path or url to factor csv', required=True)
-    #parser.add_argument('--ports', help='path or url to portfolios csv', required=True)
-    #parser.add_argument('--out', help='output directory', default='results')
-    #args = parser.parse_args()
-    #run_all(args.factors, args.ports, args.out)
+if __name__ == '__main__':
+    factors_path = "F-F_Research_Data_Factors.csv"      
+    ports_path = "25_Portfolios_5x5.csv"                 
+    out_dir="results"
     
-factors_path = "F-F_Research_Data_Factors.csv"      # 这里改成你本地下载的因子文件
-ports_path = "25_Portfolios_5x5.csv"                 # 这里改成你本地下载的25组合文件
-
-run_all(factors_path, ports_path, out_dir="results")
+    run_all(factors_path, ports_path, out_dir="results")
 
 # End of file
