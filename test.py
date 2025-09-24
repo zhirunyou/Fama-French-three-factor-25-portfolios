@@ -269,7 +269,59 @@ def time_series_ols(returns, factors):
     return betas, se, resid
 
 
-def grs_test(alpha, Sigma_e, Sigma_f, T, N, K):
+# Replace your grs_test with this corrected version:
+def grs_test(alpha, resid_df, factors_df):
+    """
+    Corrected GRS test.
+    - alpha: 1d array-like of length N (intercept estimates, e.g. betas.loc['const'].values)
+    - resid_df: DataFrame T x N of residuals from time-series regressions (aligned index)
+    - factors_df: DataFrame T x K of the factor returns used in regressions (aligned index)
+    Returns: (Fstat, pval)
+    """
+    # Align indices and drop any rows with missing in either resid or factors.
+    common_index = resid_df.index.intersection(factors_df.index)
+    resid = resid_df.loc[common_index]
+    factors = factors_df.loc[common_index]
+
+    # Keep only rows with complete data across the residuals and factors.
+    valid_rows = (~resid.isna()).all(axis=1) & (~factors.isna()).all(axis=1)
+    if valid_rows.sum() == 0:
+        raise ValueError("No complete observations to run GRS.")
+
+    E = resid.loc[valid_rows].values    # T_eff x N
+    f = factors.loc[valid_rows].values  # T_eff x K
+    T_eff = E.shape[0]
+    N = E.shape[1]
+    K = f.shape[1]
+
+    if T_eff - K - 1 <= 0:
+        raise ValueError(f"Not enough time-series observations for GRS: T_eff={T_eff}, K={K}")
+
+    # Residual covariance estimator with correct dof (T_eff - K - 1)
+    Sigma_e = (E.T @ E) / float(T_eff - K - 1)
+
+    # Factor covariance and mean (use sample covariance with ddof=1)
+    Sigma_f = np.cov(f, rowvar=False, ddof=1)  # K x K
+    mu_f = f.mean(axis=0).reshape(-1, 1)        # K x 1
+
+    # Use pseudo-inverse for numerical stability
+    inv_Sigma_e = la.pinv(Sigma_e)
+    inv_Sigma_f = la.pinv(Sigma_f)
+
+    alpha = np.asarray(alpha).reshape(-1, 1)  # N x 1
+
+    quad = float(alpha.T.dot(inv_Sigma_e).dot(alpha))  # scalar
+    denom = 1.0 + float(mu_f.T.dot(inv_Sigma_f).dot(mu_f))  # scalar
+
+    F = ((T_eff - N - K) / float(N)) * (quad / denom)
+
+    df1 = N
+    df2 = T_eff - N - K
+    if df2 <= 0:
+        raise ValueError("Degrees of freedom df2 <= 0 for GRS test; increase T or reduce N/K.")
+    pval = 1.0 - stats.f.cdf(F, df1, df2)
+    return F, pval
+
     """Compute the GRS (Gibbons, Ross, Shanken) test for mean-variance efficiency of factor model.
 
     Inputs:
@@ -562,9 +614,12 @@ def run_all(factors_path, ports_path, out_dir='results'):
     N = excess.shape[1]
     K = 3
 
-    # Try to perform the GRS test; wrap in try/except because numerical issues can arise.
+    # Compute alpha vector (use estimated intercepts, NOT residual means)
+    alpha = betas.loc['const'].astype(float).values  # length N
+
+    # Compute GRS using corrected function that estimates Sigma_e with correct dof and uses factor mean
     try:
-        Fstat, pval = grs_test(alpha, Sigma_e, Sigma_f, T, N, K)
+        Fstat, pval = grs_test(alpha, resid, factors[['Mkt-RF','SMB','HML']])
         print('GRS F-stat:', Fstat, 'pval', pval)
     except Exception as e:
         print('GRS test error:', e)
